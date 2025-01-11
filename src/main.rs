@@ -1,8 +1,11 @@
 use std::{
+    ffi::OsStr,
     fs::File,
-    io::{SeekFrom, Write},
+    io::{Cursor, Read, SeekFrom, Write},
+    path::Path,
 };
 
+use backhand::{FilesystemReader, InnerNode};
 use binrw::{binread, BinRead, FilePtr32, NullString, PosValue};
 
 use hmac::{self, Mac as _};
@@ -158,7 +161,10 @@ where
         }
 
         println!("Package: {}", std::str::from_utf8(&sidx.package_name)?);
-        println!("Version: {}.{}.{}", sidx.major_version, sidx.minor_version, sidx.patch_version);
+        println!(
+            "Version: {}.{}.{}",
+            sidx.major_version, sidx.minor_version, sidx.patch_version
+        );
 
         let strs = PosValue::<STRS>::read_le(&mut reader)?;
         let mut files = vec![];
@@ -208,6 +214,69 @@ where
     Ok(())
 }
 
+fn verify_squashed(file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let pattern = format!("{}.*", file_path.with_extension("").to_str().unwrap());
+    print!("Loading SquashFS file system from {pattern}...");
+    std::io::stdout().flush()?;
+
+    let mut paths: Vec<_> = glob::glob(&pattern)?
+        .flat_map(|p| p.map(|p| p.to_str().unwrap().to_owned()))
+        .into_iter()
+        .collect();
+    paths.sort();
+
+    let mut buffer: Vec<u8> = Vec::new();
+    for path in paths {
+        buffer.extend(std::fs::read(path.to_string())?);
+    }
+    let mut reader = Cursor::new(&*buffer);
+    println!(" done!");
+
+    let filesystem = FilesystemReader::from_reader(&mut reader)?;
+    let Some(
+        spk_file_node @ backhand::Node {
+            inner: InnerNode::File(spk_file, ..),
+            ..
+        },
+    ) = filesystem
+        .files()
+        .filter(|n| {
+            if let backhand::InnerNode::File(_) = n.inner {
+                true
+            } else {
+                false
+            }
+        })
+        .next()
+    else {
+        return Err("No files found within SquashFS file system")?;
+    };
+
+    if Path::new(&spk_file_node.fullpath)
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or("")
+        != "spk"
+    {
+        return Err("SquashFS file system did not contain a single .spk file as expected")?;
+    }
+
+    print!(
+        "Reading {} from SquashFS file system...",
+        spk_file_node.fullpath.to_str().unwrap()
+    );
+    std::io::stdout().flush()?;
+
+    let mut spk_file_reader = filesystem.file(&spk_file.basic).reader();
+    let mut spk_file_contents = vec![];
+    spk_file_contents.reserve_exact(spk_file.basic.file_size as usize);
+    spk_file_reader.read_to_end(&mut spk_file_contents)?;
+    println!(" done!");
+    println!();
+
+    verify(Cursor::new(spk_file_contents))
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 1 {
@@ -215,6 +284,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let file_name = &args[1];
-    let mut file = File::open(file_name)?;
-    verify(&mut file)
+    let path = Path::new(file_name);
+    match path.extension().and_then(OsStr::to_str) {
+        Some("spk") => {
+            let mut file = File::open(file_name)?;
+            verify(&mut file)
+        }
+        Some("000") => verify_squashed(path),
+        None | Some(_) => Err("Unknown file type")?,
+    }
 }
