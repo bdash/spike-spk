@@ -1,0 +1,10 @@
+[package]
+name = "spike2-spk"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+binrw = "0.14.1"
+hmac = "0.12.1"
+md-5 = "0.10.6"
+sha1 = "0.10.6"
