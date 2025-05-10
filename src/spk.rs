@@ -1,255 +1,192 @@
+use std::{
+    cell::RefCell,
+    ffi::OsStr,
+    io::{Cursor, Read as _},
+    path::Path,
+};
 
-use binrw::{BinRead, FilePtr32, FilePtr64, NullString, binread};
-use md5::digest::generic_array::GenericArray;
+use backhand::{FilesystemReader, InnerNode};
+use binrw::{BinRead, PosValue};
+
+use crate::chunks;
 
 pub(crate) const HMAC_KEY: &'static [u8] = &[
     0x8e, 0x1f, 0x55, 0x43, 0xc2, 0xf5, 0x4a, 0x11, 0x67, 0x3a, 0x28, 0x2a, 0x2f, 0x87, 0xc0, 0x06,
 ];
 
-#[derive(BinRead, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[br(repr(u8))]
-pub(crate) enum PackageType {
-    Spike1 = 1,
-    Spike2 = 3,
-    Game = 2,
+trait SeekableReader: std::io::Read + std::io::Seek {}
+impl<T> SeekableReader for T where T: std::io::Read + std::io::Seek {}
+
+pub struct SPKFile<'a> {
+    pub packages: Vec<Package>,
+    reader: RefCell<Box<dyn SeekableReader + 'a>>,
 }
 
-impl PackageType {
-    pub(crate) fn path_prefix(&self) -> &str {
-        if self == &PackageType::Game {
-            "/games/"
-        } else {
-            "/"
-        }
-    }
-}
-
-#[derive(BinRead, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum ByteLen {
-    #[br(magic = 0xffff_ffffu32)]
-    New(u64),
-    Old(u32),
-}
-
-impl ByteLen {
-    pub(crate) fn byte_len(&self) -> u64 {
-        match self {
-            ByteLen::New(byte_len) => *byte_len,
-            ByteLen::Old(byte_len) => *byte_len as u64,
-        }
-    }
-
-    pub(crate) fn header_size(&self) -> u64 {
-        match self {
-            ByteLen::New(_) => 16,
-            ByteLen::Old(_) => 4,
-        }
-    }
-}
-
-#[derive(BinRead, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[br(magic = b"SPKS")]
-pub(crate) struct SPKS {
-    byte_length: ByteLen,
-    pub chunk_count: u32,
-}
-
-#[derive(BinRead, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[br(magic = b"SPK0")]
-pub(crate) struct SPK0 {
-    byte_len: ByteLen,
-}
-
-impl SPK0 {
-    pub(crate) fn byte_len(&self) -> u64 {
-        self.byte_len.byte_len()
-    }
-
-    pub(crate) fn header_size(&self) -> u64 {
-        self.byte_len.header_size()
-    }
-}
-
-#[derive(BinRead, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[br(magic = b"SIDX")]
-pub(crate) struct SIDX {
-    pub byte_len: ByteLen,
-    pub package_name: [u8; 0x20],
-    pub major_version: u8,
-    pub minor_version: u8,
-    pub patch_version: u8,
-    pub package_type: PackageType,
-    unknown_b: [u8; 0xc],
-}
-
-#[derive(BinRead, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[br(magic = b"STRS")]
-pub(crate) struct STRS {
-    byte_len: u32,
-    #[br(count(byte_len))]
-    pub string_data: Vec<u8>,
-}
-
-impl std::fmt::Debug for STRS {
+impl<'a> std::fmt::Debug for SPKFile<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("STRS")
-            .field("byte_len", &self.byte_len)
-            .field("string_data", &"...")
+        f.debug_struct("File")
+            .field("packages", &self.packages)
             .finish()
     }
 }
 
-#[binread]
-#[derive(Clone, PartialEq, Eq)]
-#[br(magic = b"FINF", import(strs_offset: u64))]
-pub(crate) struct FINF {
-    byte_len: u32,
-    #[br(offset(strs_offset), parse_with = FilePtr32::parse, restore_position)]
-    filename: NullString,
-
-    #[br(temp)]
-    _filename: u32,
-
-    file_size: u32,
-
-    // Relative to SDAT.
-    data_offset: u32,
-    data_size: u32,
-
-    // TODO: What're these?
-    unknown: [u8; 2],
-
-    #[br(pad_before(3))]
-    data_hmac: [u8; 20],
-    #[br(pad_after(3))]
-    data_md5: [u8; 16],
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Package {
+    pub name: String,
+    pub version: (u8, u8, u8),
+    pub type_: chunks::PackageType,
+    pub files: Vec<FileInfo>,
 }
 
-impl std::fmt::Debug for FINF {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FINF")
-            .field("byte_len", &self.byte_len)
-            .field("filename", &self.filename)
-            .field("file_size", &self.file_size)
-            .field("data_offset", &self.data_offset)
-            .field("data_size", &self.data_size)
-            .field("unknown", &self.unknown)
-            .field(
-                "data_hmac",
-                &format_args!("{:02x}", GenericArray::from(self.data_hmac)),
-            )
-            .field(
-                "data_md5",
-                &format_args!("{:02x}", GenericArray::from(self.data_md5)),
-            )
-            .finish()
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileInfo {
+    pub name: String,
+    pub size: u64,
+    pub(crate) offset: u64,
+    pub(crate) data_size: u64,
+    pub hmac: [u8; 20],
+    pub md5: [u8; 16],
 }
 
-#[binread]
-#[derive(Clone, PartialEq, Eq)]
-#[br(magic = b"FI64", import(strs_offset: u64))]
-pub(crate) struct FI64 {
-    byte_len: u32,
+impl<'a> SPKFile<'a> {
+    pub fn parse<R>(mut reader: R) -> Result<Self, Box<dyn std::error::Error>>
+    where
+        R: std::io::Read + std::io::Seek + 'a,
+    {
+        let spks = chunks::SPKS::read_le(&mut reader)?;
 
-    #[br(offset(strs_offset), parse_with = FilePtr64::parse, restore_position)]
-    pub filename: NullString,
+        let mut packages = Vec::new();
+        for _ in 0..spks.chunk_count {
+            let spk0 = PosValue::<chunks::SPK0>::read_le(&mut reader)?;
+            let sidx = chunks::SIDX::read_le(&mut reader)?;
 
-    #[br(temp)]
-    _filename: u64,
+            // TODO: It's unclear what this is used for.
+            let _ = chunks::SZ64::read_le(&mut reader);
 
-    pub file_size: u64,
+            let strs = PosValue::<chunks::STRS>::read_le(&mut reader)?;
+            let mut files = Vec::new();
+            loop {
+                let file_info =
+                    PosValue::<chunks::FileInfo>::read_le_args(&mut reader, (strs.pos + 8,))?;
+                if let chunks::FileInfo::FEND(_) = file_info.val {
+                    break;
+                }
 
-    // Relative to SDAT.
-    pub data_offset: u64,
-    pub data_size: u64,
+                let file_info: chunks::FI64 = file_info.val.try_into()?;
+                files.push(FileInfo {
+                    name: file_info.filename.to_string(),
+                    size: file_info.file_size,
+                    offset: file_info.data_offset as u64,
+                    data_size: file_info.data_size as u64,
+                    hmac: file_info.data_hmac,
+                    md5: file_info.data_md5,
+                });
+            }
 
-    // TODO: What're these?
-    unknown: [u8; 2],
+            let sdat = PosValue::<chunks::SDAT>::read_le(&mut reader)?;
+            for file in &mut files {
+                file.offset += sdat.pos + sdat.header_size();
+            }
 
-    #[br(pad_before(3))]
-    pub data_hmac: [u8; 20],
-    #[br(pad_after(7))]
-    pub data_md5: [u8; 16],
-}
+            let package = Package {
+                name: std::str::from_utf8(&sidx.package_name)?.to_string(),
+                version: (sidx.major_version, sidx.minor_version, sidx.patch_version),
+                type_: sidx.package_type,
+                files,
+            };
+            packages.push(package);
 
-impl std::fmt::Debug for FI64 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FINF")
-            .field("byte_len", &self.byte_len)
-            .field("filename", &self.filename)
-            .field("file_size", &self.file_size)
-            .field("data_offset", &self.data_offset)
-            .field("data_size", &self.data_size)
-            .field("unknown", &self.unknown)
-            .field(
-                "data_hmac",
-                &format_args!("{:02x}", GenericArray::from(self.data_hmac)),
-            )
-            .field(
-                "data_md5",
-                &format_args!("{:02x}", GenericArray::from(self.data_md5)),
-            )
-            .finish()
-    }
-}
-
-#[derive(BinRead, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[br(magic = b"FEND")]
-pub(crate) struct FEND {
-    #[br(assert(byte_len == 0))]
-    byte_len: u32,
-}
-
-#[derive(BinRead, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[br(magic = b"SDAT")]
-pub(crate) struct SDAT {
-    byte_len: ByteLen,
-}
-
-impl SDAT {
-    #[allow(unused)]
-    pub(crate) fn byte_len(&self) -> u64 {
-        self.byte_len.byte_len()
-    }
-
-    pub(crate) fn header_size(&self) -> u64 {
-        self.byte_len.header_size()
-    }
-}
-
-#[derive(BinRead, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[br(magic = b"SZ64")]
-pub(crate) struct SZ64 {
-    byte_len: u32,
-    unknown: u64,
-}
-
-#[derive(BinRead, Debug, Clone, PartialEq, Eq)]
-#[br(import(strs_offset: u64))]
-pub(crate) enum FileInfo {
-    FINF(#[br(args(strs_offset))] FINF),
-    FI64(#[br(args(strs_offset))] FI64),
-    FEND(FEND),
-}
-
-impl TryFrom<FileInfo> for FI64 {
-    type Error = Box<dyn std::error::Error>;
-
-    fn try_from(file_info: FileInfo) -> Result<Self, Self::Error> {
-        match file_info {
-            FileInfo::FINF(finf) => Ok(FI64 {
-                byte_len: finf.byte_len,
-                filename: finf.filename,
-                file_size: finf.file_size as u64,
-                data_offset: finf.data_offset as u64,
-                data_size: finf.data_size as u64,
-                unknown: finf.unknown,
-                data_hmac: finf.data_hmac,
-                data_md5: finf.data_md5,
-            }),
-            FileInfo::FI64(fi64) => Ok(fi64),
-            FileInfo::FEND(_) => Err("FEND".into()),
+            // The next SPK0 starts at `offset`.
+            let offset = spk0.pos + spk0.offset_to_next();
+            reader.seek(std::io::SeekFrom::Start(offset))?;
         }
+
+        Ok(Self {
+            packages,
+            reader: RefCell::new(Box::new(reader)),
+        })
+    }
+
+    pub fn open(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        if std::fs::metadata(path)?.is_dir() {
+            let paths = glob::glob( &format!("{}/*.000", path.display()))?;
+            let paths: Vec<_> = paths
+                .flat_map(|p| p.ok())
+                .collect();
+            if paths.len() != 1 {
+                return Err("Path is a directory, but the directroy does not appear to contain a split SPK file")?;
+            }
+            return Self::open_split_squashed(&paths[0]);
+        }
+
+        match path.extension().and_then(OsStr::to_str) {
+            Some("spk") => Self::open_single_file(path),
+            Some("000") => Self::open_split_squashed(path),
+            None | Some(_) => Err("Unknown file type")?,
+        }
+    }
+
+    pub fn open_single_file(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let file = std::fs::File::open(path)?;
+        let reader = Box::new(file);
+        Self::parse(reader)
+    }
+
+    pub fn open_split_squashed(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let pattern = format!("{}.*", path.with_extension("").to_str().unwrap());
+
+        let mut paths: Vec<_> = glob::glob(&pattern)?
+            .flat_map(|p| p.ok())
+            .into_iter()
+            .collect();
+        paths.sort();
+
+        let mut buffer: Vec<u8> = Vec::new();
+        for path in paths {
+            buffer.extend(std::fs::read(path)?);
+        }
+        let mut reader = Cursor::new(&*buffer);
+
+        let filesystem = FilesystemReader::from_reader(&mut reader)?;
+        let Some(
+            spk_file_node @ backhand::Node {
+                inner: InnerNode::File(spk_file, ..),
+                ..
+            },
+        ) = filesystem
+            .files()
+            .filter(|n| {
+                if let backhand::InnerNode::File(_) = n.inner {
+                    true
+                } else {
+                    false
+                }
+            })
+            .next()
+        else {
+            return Err("No files found within SquashFS file system")?;
+        };
+
+        let Some("spk") = Path::new(&spk_file_node.fullpath)
+            .extension()
+            .and_then(OsStr::to_str) else 
+        {
+            return Err("SquashFS file system did not contain a single .spk file as expected")?;
+        };
+
+        let mut spk_file_reader = filesystem.file(&spk_file).reader();
+        let mut spk_file_contents = vec![];
+        spk_file_contents.reserve_exact(spk_file.file_len() as usize);
+        spk_file_reader.read_to_end(&mut spk_file_contents)?;
+
+        Self::parse(Cursor::new(spk_file_contents))
+    }
+
+    pub fn read(&self, file: &FileInfo) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut buf = vec![0; file.data_size as usize];
+        let mut reader = self.reader.borrow_mut();
+        reader.seek(std::io::SeekFrom::Start(file.offset))?;
+        reader.read_exact(&mut buf)?;
+        Ok(buf)
     }
 }

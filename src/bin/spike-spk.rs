@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, fs::File, path::PathBuf};
+use std::path::PathBuf;
 
 use clap::Parser as _;
 
@@ -38,15 +38,9 @@ struct VerifyCommand {
 
 impl Command for VerifyCommand {
     fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // TODO: Handle being passed the directory containing the split squashed files.
-        match self.path.extension().and_then(OsStr::to_str) {
-            Some("spk") => {
-                let mut file = File::open(&self.path)?;
-                spike2_spk::verify::verify(&mut file)
-            }
-            Some("000") => spike2_spk::verify::verify_squashed(&self.path),
-            None | Some(_) => Err("Unknown file type")?,
-        }
+        let mut file = spike2_spk::SPKFile::open(&self.path)?;
+        spike2_spk::verify::verify(&mut file)?;
+        Ok(())
     }
 }
 
