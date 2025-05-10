@@ -117,7 +117,9 @@ impl<'a> SPKFile<'a> {
             }
 
             let package = Package {
-                name: std::str::from_utf8(&sidx.package_name)?.to_string(),
+                name: std::str::from_utf8(&sidx.package_name)?
+                    .trim_end_matches('\0')
+                    .to_string(),
                 version: (sidx.major_version, sidx.minor_version, sidx.patch_version),
                 type_: sidx.package_type,
                 files,

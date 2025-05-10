@@ -1,4 +1,4 @@
-# Parse and verify .spk files used by software updates for Stern pinball machines
+# Extract software update packages for Stern pinball machines
 
 [Stern pinball machines](https://www.sternpinball.com/) based on Spike 2 have
 their software updates packaged as .spk files. These are downloaded over the
@@ -6,7 +6,62 @@ air by Internet-connected machines or may be manually installed by the owner by
 copying them to a flash drive that is then inserted into a USB slot on the
 MPU's motherboard.
 
-This tool can parse and validate the contents of these files. It supports both single file and split update formats.
+This tool can parse, validate, and extract these update packages. It supports both
+single file and split update formats.
+
+# Usage
+
+Given an update file or a directory containing split update files:
+
+```
+$ ls -lh ~/Downloads/jurassic_park_le-1_15_0.spk
+total 5653080
+-rw-rw-r--@ 1 mrowe  staff   1.9G Nov  7  2024 jurassic_park_le-1_15_0.spk.002.000
+-rw-rw-r--@ 1 mrowe  staff   840M Nov  7  2024 jurassic_park_le-1_15_0.spk.002.001
+```
+
+Verify the contents of the update:
+
+```
+$ stern-spk verify ~/Downloads/jurassic_park_le-1_15_0.spk
+Package: spike
+Version: 2.7.0
+/bin/chattr.e2fsprogs                                                                                                                                                 mode=100755 size=       7820  md5: ✔  hmac: ✔
+/etc/ca-certificates.conf                                                                                                                                             mode=100644 size=       7609  md5: ✔  hmac: ✔
+/etc/fb.modes                                                                                                                                                         mode=100755 size=        208  md5: ✔  hmac: ✔
+/etc/fstab                                                                                                                                                            mode=100644 size=       1925  md5: ✔  hmac: ✔
+/etc/init.d/alignment.sh                                                                                                                                              mode=100755 size=        250  md5: ✔  hmac: ✔
+/etc/init.d/alsa-state                                                                                                                                                mode=100755 size=        811  md5: ✔  hmac: ✔
+[…]
+/games/jurassic_park_le/tmc2590node-LPC1313-1_19_0.hex                                                                                                                mode=100664 size=      34692  md5: ✔  hmac: ✔
+/games/jurassic_park_le/tmc5041node-LPC1313-1_19_0.hex                                                                                                                mode=100664 size=      40460  md5: ✔  hmac: ✔
+/games/jurassic_park_le/ws2812node-LPC1313-1_19_0.hex                                                                                                                 mode=100664 size=      40460  md5: ✔  hmac: ✔
+```
+
+Extract the files from the update:
+
+```
+$ stern-spk extract ~/Downloads/jurassic_park_le-1_15_0.spk
+Verifying contents of file... done!
+
+
+Extracting package spike to /Users/mrowe/Downloads/jurassic_park_le-1_15_0/spike
+   usr/bin/lsattr
+   usr/bin/mk_cmds
+   usr/bin/compile_et
+[…]
+
+
+Extracting package jurassic_park_le to /Users/mrowe/Downloads/jurassic_park_le-1_15_0/jurassic_park_le
+   jurassic_park_le/coil4node-LPC1112_101-1_19_0.hex
+   jurassic_park_le/coil4node-LPC1112_201-1_19_0.hex
+   jurassic_park_le/coil4node-LPC1313-1_19_0.hex
+[…]
+```
+
+Verification takes 5-10 seconds, depending on the size of the update file.
+Extraction takes a few seconds longer since it verifies the files before writing
+them to disk.
 
 # The format
 
@@ -78,9 +133,10 @@ split.
 The Spike 2 system software uses `affuse` to present the chunks of the SquashFS
 file as a single logical file that is in then mounted via SquashFS.
 
-# TODO
+# Additional information
 
-Extract files to disk. The data is right there, but care needs to be taken when
-creating the files on disk. It's easier to get the file data from the [SD card
-images that Stern makes available](https://sternpinball.com/support/sd-cards/).
-
+The software update packages only include the files that have changed since the
+original release. This means many files from underlying components such as
+system libraries and the Linux kernel are not present. If you need these, look
+to the [SD card images that Stern makes
+available](https://sternpinball.com/support/sd-cards/).

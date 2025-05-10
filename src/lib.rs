@@ -1,3 +1,4 @@
+pub mod extract;
 pub mod spk;
 pub mod verify;
 pub use spk::SPKFile;
