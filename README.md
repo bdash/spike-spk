@@ -26,16 +26,16 @@ Verify the contents of the update:
 $ stern-spk verify ~/Downloads/jurassic_park_le-1_15_0.spk
 Package: spike
 Version: 2.7.0
-/bin/chattr.e2fsprogs                                                                                                                                                 mode=100755 size=       7820  md5: ✔  hmac: ✔
-/etc/ca-certificates.conf                                                                                                                                             mode=100644 size=       7609  md5: ✔  hmac: ✔
-/etc/fb.modes                                                                                                                                                         mode=100755 size=        208  md5: ✔  hmac: ✔
-/etc/fstab                                                                                                                                                            mode=100644 size=       1925  md5: ✔  hmac: ✔
-/etc/init.d/alignment.sh                                                                                                                                              mode=100755 size=        250  md5: ✔  hmac: ✔
-/etc/init.d/alsa-state                                                                                                                                                mode=100755 size=        811  md5: ✔  hmac: ✔
+/bin/chattr.e2fsprogs                                        mode=100755 size=       7820  md5: ✔  hmac: ✔
+/etc/ca-certificates.conf                                    mode=100644 size=       7609  md5: ✔  hmac: ✔
+/etc/fb.modes                                                mode=100755 size=        208  md5: ✔  hmac: ✔
+/etc/fstab                                                   mode=100644 size=       1925  md5: ✔  hmac: ✔
+/etc/init.d/alignment.sh                                     mode=100755 size=        250  md5: ✔  hmac: ✔
+/etc/init.d/alsa-state                                       mode=100755 size=        811  md5: ✔  hmac: ✔
 […]
-/games/jurassic_park_le/tmc2590node-LPC1313-1_19_0.hex                                                                                                                mode=100664 size=      34692  md5: ✔  hmac: ✔
-/games/jurassic_park_le/tmc5041node-LPC1313-1_19_0.hex                                                                                                                mode=100664 size=      40460  md5: ✔  hmac: ✔
-/games/jurassic_park_le/ws2812node-LPC1313-1_19_0.hex                                                                                                                 mode=100664 size=      40460  md5: ✔  hmac: ✔
+/games/jurassic_park_le/tmc2590node-LPC1313-1_19_0.hex       mode=100664 size=      34692  md5: ✔  hmac: ✔
+/games/jurassic_park_le/tmc5041node-LPC1313-1_19_0.hex       mode=100664 size=      40460  md5: ✔  hmac: ✔
+/games/jurassic_park_le/ws2812node-LPC1313-1_19_0.hex        mode=100664 size=      40460  md5: ✔  hmac: ✔
 ```
 
 Extract the files from the update:
