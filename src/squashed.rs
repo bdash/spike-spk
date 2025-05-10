@@ -5,10 +5,23 @@ use std::{
 };
 
 use backhand::{FilesystemReader, InnerNode};
+use thiserror::Error;
 
-pub(crate) fn extract_spk_file(
-    path: &Path,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Failed to read file: {0}")]
+    IOError(#[from] std::io::Error),
+    #[error("Failed to load SquashFS file: {0}")]
+    SquashFS(#[from] backhand::BackhandError),
+    #[error("Invalid file name: {0}")]
+    GlobError(#[from] glob::PatternError),
+    #[error("No files found within SquashFS file system")]
+    NoFilesFound,
+    #[error("SquashFS file system did not contain a single .spk file as expected")]
+    SPKFileNotFound,
+}
+
+pub(crate) fn extract_spk_file(path: &Path) -> Result<Vec<u8>, Error> {
     let pattern = format!("{}.*", path.with_extension("").to_str().unwrap());
 
     let mut paths: Vec<_> = glob::glob(&pattern)?
@@ -40,14 +53,14 @@ pub(crate) fn extract_spk_file(
         })
         .next()
     else {
-        return Err("No files found within SquashFS file system")?;
+        return Err(Error::NoFilesFound)?;
     };
 
     let Some("spk") = Path::new(&spk_file_node.fullpath)
         .extension()
         .and_then(OsStr::to_str)
     else {
-        return Err("SquashFS file system did not contain a single .spk file as expected")?;
+        return Err(Error::SPKFileNotFound)?;
     };
 
     let mut spk_file_reader = filesystem.file(&spk_file).reader();

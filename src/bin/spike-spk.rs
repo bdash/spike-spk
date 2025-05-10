@@ -10,7 +10,7 @@ struct Args {
 }
 
 trait Command {
-    fn run(&self) -> Result<(), Box<dyn std::error::Error>>;
+    fn run(&self) -> anyhow::Result<()>;
 }
 
 #[derive(Debug, clap::Subcommand)]
@@ -22,7 +22,7 @@ enum Commands {
 }
 
 impl Command for Commands {
-    fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run(&self) -> anyhow::Result<()> {
         match self {
             Commands::Verify(cmd) => cmd.run(),
             Commands::Extract(cmd) => cmd.run(),
@@ -37,7 +37,7 @@ struct VerifyCommand {
 }
 
 impl Command for VerifyCommand {
-    fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run(&self) -> anyhow::Result<()> {
         let mut file = spike2_spk::SPKFile::open(&self.path)?;
         spike2_spk::verify::verify(&mut file)?;
         Ok(())
@@ -56,12 +56,12 @@ struct ExtractCommand {
 }
 
 impl Command for ExtractCommand {
-    fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
-        Err("Extracting is not yet implemented")?
+    fn run(&self) -> anyhow::Result<()> {
+        anyhow::bail!("Extracting is not yet implemented")
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     args.command.run()

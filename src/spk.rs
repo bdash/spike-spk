@@ -1,11 +1,12 @@
 use std::{
-    cell::RefCell,
     ffi::OsStr,
-    io::{Cursor, Read as _},
+    io::Cursor,
     path::Path,
+    sync::{Arc, Mutex},
 };
 
 use binrw::{BinRead, PosValue};
+use thiserror::Error;
 
 use crate::{chunks, squashed};
 
@@ -13,12 +14,38 @@ pub(crate) const HMAC_KEY: &'static [u8] = &[
     0x8e, 0x1f, 0x55, 0x43, 0xc2, 0xf5, 0x4a, 0x11, 0x67, 0x3a, 0x28, 0x2a, 0x2f, 0x87, 0xc0, 0x06,
 ];
 
-trait SeekableReader: std::io::Read + std::io::Seek {}
-impl<T> SeekableReader for T where T: std::io::Read + std::io::Seek {}
+#[derive(Error, Debug)]
+pub enum OpenError {
+    #[error("Failed to read file: {0}")]
+    IOError(#[from] std::io::Error),
+    #[error("Failed to parse file: {0}")]
+    Parse(#[from] binrw::Error),
+    #[error("File name contained invalid UTF-8: {0}")]
+    Utf8(#[from] std::str::Utf8Error),
+    #[error("Failed to read SquashFS file: {0}")]
+    SquashFS(#[from] squashed::Error),
+    #[error("Invalid file name: {0}")]
+    GlobError(#[from] glob::PatternError),
+    #[error("Unknown file type")]
+    UnknownFileType,
+    #[error("Directory does not appear to contain a split SPK file")]
+    DirectoryDoesNotContainSplitSPK,
+}
+
+#[derive(Error, Debug)]
+pub enum ReadError {
+    #[error("Failed to read file: {0}")]
+    IOError(#[from] std::io::Error),
+    #[error("Failed to parse file: {0}")]
+    Parse(#[from] binrw::Error),
+}
+
+trait SeekableReader: std::io::Read + std::io::Seek + Send {}
+impl<T> SeekableReader for T where T: std::io::Read + std::io::Seek + Send {}
 
 pub struct SPKFile<'a> {
     pub packages: Vec<Package>,
-    reader: RefCell<Box<dyn SeekableReader + 'a>>,
+    reader: Arc<Mutex<dyn SeekableReader + 'a>>,
 }
 
 impl<'a> std::fmt::Debug for SPKFile<'a> {
@@ -49,9 +76,9 @@ pub struct FileInfo {
 }
 
 impl<'a> SPKFile<'a> {
-    pub fn parse<R>(mut reader: R) -> Result<Self, Box<dyn std::error::Error>>
+    pub fn parse<R>(mut reader: R) -> Result<Self, OpenError>
     where
-        R: std::io::Read + std::io::Seek + 'a,
+        R: std::io::Read + std::io::Seek + Send + 'a,
     {
         let spks = chunks::SPKS::read_le(&mut reader)?;
 
@@ -72,7 +99,7 @@ impl<'a> SPKFile<'a> {
                     break;
                 }
 
-                let file_info: chunks::FI64 = file_info.val.try_into()?;
+                let file_info: chunks::FI64 = file_info.val.try_into().unwrap();
                 files.push(FileInfo {
                     name: file_info.filename.to_string(),
                     size: file_info.file_size,
@@ -104,18 +131,16 @@ impl<'a> SPKFile<'a> {
 
         Ok(Self {
             packages,
-            reader: RefCell::new(Box::new(reader)),
+            reader: Arc::new(Mutex::new(reader)),
         })
     }
 
-    pub fn open(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn open(path: &Path) -> Result<Self, OpenError> {
         if std::fs::metadata(path)?.is_dir() {
-            let paths = glob::glob( &format!("{}/*.000", path.display()))?;
-            let paths: Vec<_> = paths
-                .flat_map(|p| p.ok())
-                .collect();
+            let paths = glob::glob(&format!("{}/*.000", path.display()))?;
+            let paths: Vec<_> = paths.flat_map(|p| p.ok()).collect();
             if paths.len() != 1 {
-                return Err("Path is a directory, but the directroy does not appear to contain a split SPK file")?;
+                Err(OpenError::DirectoryDoesNotContainSplitSPK)?;
             }
             return Self::open_split_squashed(&paths[0]);
         }
@@ -123,24 +148,24 @@ impl<'a> SPKFile<'a> {
         match path.extension().and_then(OsStr::to_str) {
             Some("spk") => Self::open_single_file(path),
             Some("000") => Self::open_split_squashed(path),
-            None | Some(_) => Err("Unknown file type")?,
+            None | Some(_) => Err(OpenError::UnknownFileType)?,
         }
     }
 
-    pub fn open_single_file(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn open_single_file(path: &Path) -> Result<Self, OpenError> {
         let file = std::fs::File::open(path)?;
         let reader = Box::new(file);
         Self::parse(reader)
     }
 
-    pub fn open_split_squashed(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn open_split_squashed(path: &Path) -> Result<Self, OpenError> {
         let spk_file_data = squashed::extract_spk_file(path)?;
         Self::parse(Cursor::new(spk_file_data))
     }
 
-    pub fn read(&self, file: &FileInfo) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    pub fn read(&self, file: &FileInfo) -> Result<Vec<u8>, ReadError> {
         let mut buf = vec![0; file.data_size as usize];
-        let mut reader = self.reader.borrow_mut();
+        let mut reader = self.reader.lock().unwrap();
         reader.seek(std::io::SeekFrom::Start(file.offset))?;
         reader.read_exact(&mut buf)?;
         Ok(buf)
