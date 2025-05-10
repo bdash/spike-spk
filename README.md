@@ -15,15 +15,24 @@ This tool can parse and validate the contents of these files. It supports both s
 The format consists of chunks with 8 byte headers like so:
 
 ```rust
+enum ChunkSize {
+   #[br(magic = 0xffff_ffffu32)]
+   New(u64),
+   Old(u32),
+}
+
 struct Header {
-   magic: [u8; 8],
-   size: u32,
+   magic: [u8; 4],
+   size: ChunkSize,
 }
 ```
 
 The magic value indicates the type of the chunk (`SPKS`, `SPK0`, `SIDX`,
-`STRS`, `FINF`, `FEND`, `SDAT`). The size indicates the number of bytes
-contained within the chunk.
+`STRS`, `FINF`, `FI64`, `FEND`, `SDAT`, `SZ64`). The size indicates the number
+of bytes contained within the chunk. Note that the size may be either `ffff ffff`
+followed by a 64-bit size, or a 32-bit value. The `ffff ffff` is for
+backward-compatibility and presumably prevents older software that assumes
+32-bit sizes are used from misinterpreting the file.
 
 Chunks can contain other chunks.
 
@@ -40,14 +49,19 @@ name, and its version number.
 `STRS` contains null-separated strings for all of the file names contained
 within the package.
 
-After `STRS` are zero or more `FINF` chunks containing information aboout the
-files contained within the update. These are terminated by a `FEND` chunk.
+After `STRS` are zero or more `FINF` / `FI64` chunks containing information
+aboout the files contained within the update. These are terminated by a `FEND`
+chunk.
 
-`FINF` chunks contain the file name (represented as an offset into `STRS`), the
+`FINF` / `FI64` chunks contain the file name (represented as an offset into `STRS`), the
 file size, the offset of the file data within `SDAT`, an HMAC-SHA1 of the data,
 and an MD5 of the data.
 
+`FINF` uses 32-bit fields for sizes and offsets, while `FI64` uses 64-bit fields.
+
 `SDAT` chunks contain the file data. The data is indexed by `FINF`.
+
+It is unknown what purpose `SZ64` serves at this time.
 
 
 ## Split update format
