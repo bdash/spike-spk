@@ -627,7 +627,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b8a731ed60e89177c8a7ab05fe0f1511cedd3e70e773f288f9de33a9cfdc21e"
 
 [[package]]
-name = "spike2-spk"
+name = "spike-spk"
 version = "0.1.0"
 dependencies = [
  "anyhow",

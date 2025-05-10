@@ -38,8 +38,8 @@ struct VerifyCommand {
 
 impl Command for VerifyCommand {
     fn run(&self) -> anyhow::Result<()> {
-        let mut file = spike2_spk::SPKFile::open(&self.path)?;
-        spike2_spk::verify::verify(&mut file)?;
+        let mut file = spike_spk::SPKFile::open(&self.path)?;
+        spike_spk::verify::verify(&mut file)?;
         Ok(())
     }
 }
