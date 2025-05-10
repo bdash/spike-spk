@@ -6,7 +6,7 @@ use std::{
 };
 
 use backhand::{FilesystemReader, InnerNode};
-use binrw::{BinRead, FilePtr32, NullString, PosValue, binread};
+use binrw::{BinRead, FilePtr32, FilePtr64, NullString, PosValue, binread};
 
 use hmac::{self, Mac as _};
 use md5::{Digest, digest::generic_array::GenericArray};
@@ -35,22 +35,55 @@ impl PackageType {
 }
 
 #[derive(BinRead, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum ByteLen {
+    #[br(magic = 0xffff_ffffu32)]
+    New(u64),
+    Old(u32),
+}
+
+impl ByteLen {
+    fn byte_len(&self) -> u64 {
+        match self {
+            ByteLen::New(byte_len) => *byte_len,
+            ByteLen::Old(byte_len) => *byte_len as u64,
+        }
+    }
+
+    fn header_size(&self) -> u64 {
+        match self {
+            ByteLen::New(_) => 16,
+            ByteLen::Old(_) => 4,
+        }
+    }
+}
+
+#[derive(BinRead, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[br(magic = b"SPKS")]
 struct SPKS {
-    byte_len: u32,
+    byte_length: ByteLen,
     chunk_count: u32,
 }
 
 #[derive(BinRead, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[br(magic = b"SPK0")]
 struct SPK0 {
-    byte_len: u32,
+    byte_len: ByteLen,
+}
+
+impl SPK0 {
+    fn byte_len(&self) -> u64 {
+        self.byte_len.byte_len()
+    }
+
+    fn header_size(&self) -> u64 {
+        self.byte_len.header_size()
+    }
 }
 
 #[derive(BinRead, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[br(magic = b"SIDX")]
 struct SIDX {
-    byte_len: u32,
+    byte_len: ByteLen,
     package_name: [u8; 0x20],
     major_version: u8,
     minor_version: u8,
@@ -123,6 +156,54 @@ impl std::fmt::Debug for FINF {
     }
 }
 
+#[binread]
+#[derive(Clone, PartialEq, Eq)]
+#[br(magic = b"FI64", import(strs_offset: u64))]
+struct FI64 {
+    byte_len: u32,
+
+    #[br(offset(strs_offset), parse_with = FilePtr64::parse, restore_position)]
+    filename: NullString,
+
+    #[br(temp)]
+    _filename: u64,
+
+    file_size: u64,
+
+    // Relative to SDAT.
+    data_offset: u64,
+    data_size: u64,
+
+    // TODO: What're these?
+    unknown: [u8; 2],
+
+    #[br(pad_before(3))]
+    data_hmac: [u8; 20],
+    #[br(pad_after(7))]
+    data_md5: [u8; 16],
+}
+
+impl std::fmt::Debug for FI64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FINF")
+            .field("byte_len", &self.byte_len)
+            .field("filename", &self.filename)
+            .field("file_size", &self.file_size)
+            .field("data_offset", &self.data_offset)
+            .field("data_size", &self.data_size)
+            .field("unknown", &self.unknown)
+            .field(
+                "data_hmac",
+                &format_args!("{:02x}", GenericArray::from(self.data_hmac)),
+            )
+            .field(
+                "data_md5",
+                &format_args!("{:02x}", GenericArray::from(self.data_md5)),
+            )
+            .finish()
+    }
+}
+
 #[derive(BinRead, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[br(magic = b"FEND")]
 struct FEND {
@@ -133,18 +214,54 @@ struct FEND {
 #[derive(BinRead, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[br(magic = b"SDAT")]
 struct SDAT {
+    byte_len: ByteLen,
+}
+
+impl SDAT {
+    #[allow(unused)]
+    fn byte_len(&self) -> u64 {
+        self.byte_len.byte_len()
+    }
+
+    fn header_size(&self) -> u64 {
+        self.byte_len.header_size()
+    }
+}
+
+#[derive(BinRead, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[br(magic = b"SZ64")]
+struct SZ64 {
     byte_len: u32,
+    unknown: u64,
 }
 
 #[derive(BinRead, Debug, Clone, PartialEq, Eq)]
 #[br(import(strs_offset: u64))]
-enum Chunk {
-    SPKS(SPKS),
-    SPK0(SPK0),
-    SIDX(SIDX),
-    STRS(STRS),
+enum FileInfo {
     FINF(#[br(args(strs_offset))] FINF),
+    FI64(#[br(args(strs_offset))] FI64),
     FEND(FEND),
+}
+
+impl TryFrom<FileInfo> for FI64 {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(file_info: FileInfo) -> Result<Self, Self::Error> {
+        match file_info {
+            FileInfo::FINF(finf) => Ok(FI64 {
+                byte_len: finf.byte_len,
+                filename: finf.filename,
+                file_size: finf.file_size as u64,
+                data_offset: finf.data_offset as u64,
+                data_size: finf.data_size as u64,
+                unknown: finf.unknown,
+                data_hmac: finf.data_hmac,
+                data_md5: finf.data_md5,
+            }),
+            FileInfo::FI64(fi64) => Ok(fi64),
+            FileInfo::FEND(_) => Err("FEND".into()),
+        }
+    }
 }
 
 fn verify<R>(mut reader: R) -> Result<(), Box<dyn std::error::Error>>
@@ -166,10 +283,18 @@ where
             sidx.major_version, sidx.minor_version, sidx.patch_version
         );
 
+        // TODO: It's unclear what this is used for.
+        let _ = SZ64::read_le(&mut reader);
+
         let strs = PosValue::<STRS>::read_le(&mut reader)?;
-        let mut files = vec![];
-        while let Chunk::FINF(finf) = Chunk::read_le_args(&mut reader, (strs.pos + 8,))? {
-            files.push(finf);
+        let mut files: Vec<FI64> = vec![];
+        loop {
+            let file_info = PosValue::<FileInfo>::read_le_args(&mut reader, (strs.pos + 8,))?;
+            if let FileInfo::FEND(_) = file_info.val {
+                break;
+            }
+
+            files.push(file_info.val.try_into()?);
         }
 
         let sdat = PosValue::<SDAT>::read_le(&mut reader)?;
@@ -184,7 +309,7 @@ where
             std::io::stdout().flush()?;
 
             let mut file_contents = vec![0; file_info.data_size as usize];
-            let offset = sdat.pos + 8 + file_info.data_offset as u64;
+            let offset = sdat.pos + sdat.header_size() + file_info.data_offset as u64;
             reader.seek(SeekFrom::Start(offset))?;
             reader.read_exact(&mut file_contents)?;
 
@@ -207,7 +332,7 @@ where
         }
 
         // The next SPK0 starts at `offset`.
-        let offset = spk0.pos + 8 + spk0.byte_len as u64;
+        let offset = spk0.pos + spk0.header_size() + spk0.byte_len();
         reader.seek(SeekFrom::Start(offset))?;
     }
 
