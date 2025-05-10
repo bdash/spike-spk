@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 backhand = "0.22.0"
 binrw = "0.15.0"
+clap = { version = "4.5.37", features = ["derive"] }
 glob = "0.3.2"
 hmac = "0.12.1"
 md-5 = "0.10.6"
