@@ -20,9 +20,9 @@ pub fn verify(file: &mut spk::SPKFile) -> Result<(), Box<dyn std::error::Error>>
 
         for file_info in &package.files {
             print!(
-                "{:165} offset={:10} size={:10}  ",
+                "{:165} mode={:o} size={:11}  ",
                 format!("{}{}", package.type_.path_prefix(), file_info.name),
-                file_info.offset,
+                file_info.mode,
                 file_info.size
             );
             std::io::stdout().flush()?;

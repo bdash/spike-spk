@@ -45,6 +45,7 @@ pub struct FileInfo {
     pub(crate) data_size: u64,
     pub hmac: [u8; 20],
     pub md5: [u8; 16],
+    pub mode: u16,
 }
 
 impl<'a> SPKFile<'a> {
@@ -77,6 +78,7 @@ impl<'a> SPKFile<'a> {
                     size: file_info.file_size,
                     offset: file_info.data_offset as u64,
                     data_size: file_info.data_size as u64,
+                    mode: file_info.mode,
                     hmac: file_info.data_hmac,
                     md5: file_info.data_md5,
                 });

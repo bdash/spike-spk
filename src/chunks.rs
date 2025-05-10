@@ -108,8 +108,7 @@ pub(crate) struct FINF {
     data_offset: u32,
     data_size: u32,
 
-    // TODO: What're these?
-    unknown: [u8; 2],
+    mode: u16,
 
     #[br(pad_before(3))]
     data_hmac: [u8; 20],
@@ -125,7 +124,7 @@ impl std::fmt::Debug for FINF {
             .field("file_size", &self.file_size)
             .field("data_offset", &self.data_offset)
             .field("data_size", &self.data_size)
-            .field("unknown", &self.unknown)
+            .field("mode", &self.mode)
             .field(
                 "data_hmac",
                 &format_args!("{:02x}", GenericArray::from(self.data_hmac)),
@@ -156,8 +155,7 @@ pub(crate) struct FI64 {
     pub data_offset: u64,
     pub data_size: u64,
 
-    // TODO: What're these?
-    unknown: [u8; 2],
+    pub mode: u16,
 
     #[br(pad_before(3))]
     pub data_hmac: [u8; 20],
@@ -173,7 +171,7 @@ impl std::fmt::Debug for FI64 {
             .field("file_size", &self.file_size)
             .field("data_offset", &self.data_offset)
             .field("data_size", &self.data_size)
-            .field("unknown", &self.unknown)
+            .field("mode", &self.mode)
             .field(
                 "data_hmac",
                 &format_args!("{:02x}", GenericArray::from(self.data_hmac)),
@@ -236,7 +234,7 @@ impl TryFrom<FileInfo> for FI64 {
                 file_size: finf.file_size as u64,
                 data_offset: finf.data_offset as u64,
                 data_size: finf.data_size as u64,
-                unknown: finf.unknown,
+                mode: finf.mode,
                 data_hmac: finf.data_hmac,
                 data_md5: finf.data_md5,
             }),
