@@ -5,10 +5,9 @@ use std::{
     path::Path,
 };
 
-use backhand::{FilesystemReader, InnerNode};
 use binrw::{BinRead, PosValue};
 
-use crate::chunks;
+use crate::{chunks, squashed};
 
 pub(crate) const HMAC_KEY: &'static [u8] = &[
     0x8e, 0x1f, 0x55, 0x43, 0xc2, 0xf5, 0x4a, 0x11, 0x67, 0x3a, 0x28, 0x2a, 0x2f, 0x87, 0xc0, 0x06,
@@ -133,53 +132,8 @@ impl<'a> SPKFile<'a> {
     }
 
     pub fn open_split_squashed(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
-        let pattern = format!("{}.*", path.with_extension("").to_str().unwrap());
-
-        let mut paths: Vec<_> = glob::glob(&pattern)?
-            .flat_map(|p| p.ok())
-            .into_iter()
-            .collect();
-        paths.sort();
-
-        let mut buffer: Vec<u8> = Vec::new();
-        for path in paths {
-            buffer.extend(std::fs::read(path)?);
-        }
-        let mut reader = Cursor::new(&*buffer);
-
-        let filesystem = FilesystemReader::from_reader(&mut reader)?;
-        let Some(
-            spk_file_node @ backhand::Node {
-                inner: InnerNode::File(spk_file, ..),
-                ..
-            },
-        ) = filesystem
-            .files()
-            .filter(|n| {
-                if let backhand::InnerNode::File(_) = n.inner {
-                    true
-                } else {
-                    false
-                }
-            })
-            .next()
-        else {
-            return Err("No files found within SquashFS file system")?;
-        };
-
-        let Some("spk") = Path::new(&spk_file_node.fullpath)
-            .extension()
-            .and_then(OsStr::to_str) else 
-        {
-            return Err("SquashFS file system did not contain a single .spk file as expected")?;
-        };
-
-        let mut spk_file_reader = filesystem.file(&spk_file).reader();
-        let mut spk_file_contents = vec![];
-        spk_file_contents.reserve_exact(spk_file.file_len() as usize);
-        spk_file_reader.read_to_end(&mut spk_file_contents)?;
-
-        Self::parse(Cursor::new(spk_file_contents))
+        let spk_file_data = squashed::extract_spk_file(path)?;
+        Self::parse(Cursor::new(spk_file_data))
     }
 
     pub fn read(&self, file: &FileInfo) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
