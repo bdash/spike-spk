@@ -15,3 +15,8 @@ md-5 = "0.10.6"
 rayon = "1.10.0"
 sha1 = "0.10.6"
 thiserror = "2.0.12"
+
+[patch.crates-io]
+# Work around https://github.com/wcampbell0x2a/backhand/issues/714
+backhand = { git = "https://github.com/bdash/backhand.git", branch = "spk-assert-workaround" }
+

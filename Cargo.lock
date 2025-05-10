@@ -73,8 +73,7 @@ checksum = "3d62b7694a562cdf5a74227903507c56ab2cc8bdd1f781ed5cb4cf9c9f810bfc"
 [[package]]
 name = "backhand"
 version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a94ce094e27a9436f2d5bbe49d429722b03e59a57b5beae0c5df26c79611b06d"
+source = "git+https://github.com/bdash/backhand.git?branch=spk-assert-workaround#43dbd2a8ee955beb9028718ca888328c783c4b9c"
 dependencies = [
  "deku",
  "flate2",
