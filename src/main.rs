@@ -6,10 +6,10 @@ use std::{
 };
 
 use backhand::{FilesystemReader, InnerNode};
-use binrw::{binread, BinRead, FilePtr32, NullString, PosValue};
+use binrw::{BinRead, FilePtr32, NullString, PosValue, binread};
 
 use hmac::{self, Mac as _};
-use md5::{digest::generic_array::GenericArray, Digest};
+use md5::{Digest, digest::generic_array::GenericArray};
 use sha1;
 
 const HMAC_KEY: &'static [u8] = &[
@@ -267,9 +267,9 @@ fn verify_squashed(file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     );
     std::io::stdout().flush()?;
 
-    let mut spk_file_reader = filesystem.file(&spk_file.basic).reader();
+    let mut spk_file_reader = filesystem.file(&spk_file).reader();
     let mut spk_file_contents = vec![];
-    spk_file_contents.reserve_exact(spk_file.basic.file_size as usize);
+    spk_file_contents.reserve_exact(spk_file.file_len() as usize);
     spk_file_reader.read_to_end(&mut spk_file_contents)?;
     println!(" done!");
     println!();
