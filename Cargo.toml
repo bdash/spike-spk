@@ -6,9 +6,9 @@ description = "A tool for extracting or verifying Stern Pinball software update 
 
 [dependencies]
 anyhow = "1.0.98"
-backhand = "0.22.0"
+backhand = { version = "0.23.0", features = ["parallel"] }
 binrw = "0.15.0"
-clap = { version = "4.5.37", features = ["derive"] }
+clap = { version = "4.5.40", features = ["derive"] }
 glob = "0.3.2"
 hmac = "0.12.1"
 md-5 = "0.10.6"
@@ -22,8 +22,4 @@ missing_errors_doc = { level = "allow" }
 missing_panics_doc = { level = "allow" }
 similar_names = { level = "allow" }
 upper_case_acronyms = { level = "allow" }
-
-[patch.crates-io]
-# Work around https://github.com/wcampbell0x2a/backhand/issues/714
-backhand = { git = "https://github.com/bdash/backhand.git", branch = "spk-assert-workaround" }
 
