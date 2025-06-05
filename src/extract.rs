@@ -2,7 +2,10 @@ use std::{io::Write as _, path::Path};
 
 use anyhow::Context as _;
 
-use crate::{fs::FileSystem, spk, verify};
+use crate::{
+    fs::{FileSystem, WriteResult},
+    spk, verify,
+};
 
 pub fn extract(file: &mut spk::SPKFile, to: &Path, fs: &mut dyn FileSystem) -> anyhow::Result<()> {
     match std::fs::remove_dir_all(to) {
@@ -39,11 +42,22 @@ pub fn extract(file: &mut spk::SPKFile, to: &Path, fs: &mut dyn FileSystem) -> a
                 );
             }
 
-            println!("   {}", file_info.name);
             let output_path = package_path.join(&file_info.name);
-
             let data = file.read(file_info)?;
-            fs.write_file(&output_path, &data, u32::from(file_info.mode))?;
+            let result = fs.write_file(
+                &output_path,
+                &data,
+                u32::from(file_info.mode),
+                &file_info.hmac,
+            )?;
+
+            match result {
+                WriteResult::Direct => println!("   {}", file_info.name),
+                WriteResult::Cas { cached, .. } => {
+                    let status = if cached { "(cached)" } else { "" };
+                    println!("   {} {status}", file_info.name);
+                }
+            }
         }
     }
 

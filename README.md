@@ -63,6 +63,17 @@ Verification takes 5-10 seconds, depending on the size of the update file.
 Extraction takes a few seconds longer since it verifies the files before writing
 them to disk.
 
+## Content-addressable storage
+
+When extracting multiple updates, use `--cas-dir` to enable deduplication:
+
+```
+$ stern-spk extract ~/Downloads/jurassic_park_le-1_15_0.spk --cas-dir ~/spk-archive
+```
+
+This stores files by content hash and uses reflinks/hardlinks to avoid duplicates,
+significantly reducing disk usage when extracting multiple updates of the same game.
+
 # The format
 
 ## Single file update format

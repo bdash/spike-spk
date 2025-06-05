@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::Parser as _;
+use clap::{Parser as _, ValueEnum};
 
 /// Extract or verify a Stern Pinball software update package
 ///
@@ -55,6 +55,23 @@ impl Command for VerifyCommand {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum LinkStrategyArg {
+    ReflinkOnly,
+    Hardlink,
+    Copy,
+}
+
+impl From<LinkStrategyArg> for spike_spk::link::LinkStrategy {
+    fn from(arg: LinkStrategyArg) -> Self {
+        match arg {
+            LinkStrategyArg::ReflinkOnly => spike_spk::link::LinkStrategy::ReflinkOnly,
+            LinkStrategyArg::Hardlink => spike_spk::link::LinkStrategy::ReflinkOrHardlink,
+            LinkStrategyArg::Copy => spike_spk::link::LinkStrategy::ReflinkOrCopy,
+        }
+    }
+}
+
 #[derive(Debug, clap::Args)]
 struct ExtractCommand {
     /// The path to the SPK file to extract.
@@ -69,6 +86,14 @@ struct ExtractCommand {
     /// If not specified, the files will be extracted to a directory alongside the SPK file.
     #[arg(short, long, name = "DIR")]
     output: Option<PathBuf>,
+
+    /// Enable content-addressable storage for deduplication
+    #[arg(long)]
+    cas_dir: Option<PathBuf>,
+
+    /// Strategy for linking files from CAS (default: hardlink)
+    #[arg(long, value_enum, default_value = "hardlink", requires = "cas_dir")]
+    link_strategy: LinkStrategyArg,
 }
 
 fn file_name_prefix(path: &Path) -> Option<&OsStr> {
@@ -99,8 +124,17 @@ impl Command for ExtractCommand {
             .map(|p| p.join(prefix))
             .ok_or_else(|| anyhow::anyhow!("No output directory specified and default output directory could not be computed"))?;
 
-        let mut fs = spike_spk::fs::DirectFileSystem;
-        spike_spk::extract::extract(&mut file, &output_directory, &mut fs)
+        let mut fs: Box<dyn spike_spk::fs::FileSystem> = if let Some(cas_dir) = &self.cas_dir {
+            let cas = spike_spk::cas::ContentAddressableStore::new(cas_dir.clone())?;
+            Box::new(spike_spk::fs::CasFileSystem::new(
+                cas,
+                self.link_strategy.into(),
+            ))
+        } else {
+            Box::new(spike_spk::fs::DirectFileSystem)
+        };
+
+        spike_spk::extract::extract(&mut file, &output_directory, fs.as_mut())
     }
 }
 
