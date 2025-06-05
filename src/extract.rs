@@ -2,9 +2,9 @@ use std::{io::Write as _, path::Path};
 
 use anyhow::Context as _;
 
-use crate::{spk, verify};
+use crate::{fs::FileSystem, spk, verify};
 
-pub fn extract(file: &mut spk::SPKFile, to: &Path) -> anyhow::Result<()> {
+pub fn extract(file: &mut spk::SPKFile, to: &Path, fs: &mut dyn FileSystem) -> anyhow::Result<()> {
     match std::fs::remove_dir_all(to) {
         Ok(()) => {}
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -41,20 +41,9 @@ pub fn extract(file: &mut spk::SPKFile, to: &Path) -> anyhow::Result<()> {
 
             println!("   {}", file_info.name);
             let output_path = package_path.join(&file_info.name);
-            let parent = output_path.parent().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Failed to get parent directory for {}",
-                    output_path.display()
-                )
-            })?;
 
-            std::fs::create_dir_all(parent)?;
-
-            std::fs::write(&output_path, file.read(file_info)?)?;
-            std::fs::set_permissions(
-                &output_path,
-                std::os::unix::fs::PermissionsExt::from_mode(u32::from(file_info.mode)),
-            )?;
+            let data = file.read(file_info)?;
+            fs.write_file(&output_path, &data, u32::from(file_info.mode))?;
         }
     }
 

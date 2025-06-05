@@ -99,7 +99,8 @@ impl Command for ExtractCommand {
             .map(|p| p.join(prefix))
             .ok_or_else(|| anyhow::anyhow!("No output directory specified and default output directory could not be computed"))?;
 
-        spike_spk::extract::extract(&mut file, &output_directory)
+        let mut fs = spike_spk::fs::DirectFileSystem;
+        spike_spk::extract::extract(&mut file, &output_directory, &mut fs)
     }
 }
 
