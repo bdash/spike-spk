@@ -6,7 +6,7 @@ use crate::{spk, verify};
 
 pub fn extract(file: &mut spk::SPKFile, to: &Path) -> anyhow::Result<()> {
     match std::fs::remove_dir_all(to) {
-        Ok(_) => {}
+        Ok(()) => {}
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         err @ Err(_) => err.with_context(|| {
             format!(
@@ -21,7 +21,7 @@ pub fn extract(file: &mut spk::SPKFile, to: &Path) -> anyhow::Result<()> {
     verify::verify_all(file)?;
     println!(" done!");
 
-    for package in file.packages.iter() {
+    for package in &file.packages {
         println!("\n");
 
         let package_path = to.join(&package.name);
@@ -32,7 +32,7 @@ pub fn extract(file: &mut spk::SPKFile, to: &Path) -> anyhow::Result<()> {
         );
 
         for file_info in &package.files {
-            if file_info.name.starts_with("/") {
+            if file_info.name.starts_with('/') {
                 anyhow::bail!(
                     "Refusing to extract file whose path is absolute: {}",
                     file_info.name
@@ -53,7 +53,7 @@ pub fn extract(file: &mut spk::SPKFile, to: &Path) -> anyhow::Result<()> {
             std::fs::write(&output_path, file.read(file_info)?)?;
             std::fs::set_permissions(
                 &output_path,
-                std::os::unix::fs::PermissionsExt::from_mode(file_info.mode as u32),
+                std::os::unix::fs::PermissionsExt::from_mode(u32::from(file_info.mode)),
             )?;
         }
     }

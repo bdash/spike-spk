@@ -2,6 +2,7 @@ use std::{
     ffi::OsStr,
     io::Cursor,
     path::Path,
+    result::Result,
     sync::{Arc, Mutex},
 };
 
@@ -10,7 +11,7 @@ use thiserror::Error;
 
 use crate::{chunks, squashed};
 
-pub(crate) const HMAC_KEY: &'static [u8] = &[
+pub(crate) const HMAC_KEY: &[u8] = &[
     0x8e, 0x1f, 0x55, 0x43, 0xc2, 0xf5, 0x4a, 0x11, 0x67, 0x3a, 0x28, 0x2a, 0x2f, 0x87, 0xc0, 0x06,
 ];
 
@@ -48,7 +49,7 @@ pub struct SPKFile<'a> {
     reader: Arc<Mutex<dyn SeekableReader + 'a>>,
 }
 
-impl<'a> std::fmt::Debug for SPKFile<'a> {
+impl std::fmt::Debug for SPKFile<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("File")
             .field("packages", &self.packages)
@@ -103,8 +104,8 @@ impl<'a> SPKFile<'a> {
                 files.push(FileInfo {
                     name: file_info.filename.to_string(),
                     size: file_info.file_size,
-                    offset: file_info.data_offset as u64,
-                    data_size: file_info.data_size as u64,
+                    offset: file_info.data_offset,
+                    data_size: file_info.data_size,
                     mode: file_info.mode,
                     hmac: file_info.data_hmac,
                     md5: file_info.data_md5,
@@ -140,7 +141,7 @@ impl<'a> SPKFile<'a> {
     pub fn open(path: &Path) -> Result<Self, OpenError> {
         if std::fs::metadata(path)?.is_dir() {
             let paths = glob::glob(&format!("{}/*.000", path.display()))?;
-            let paths: Vec<_> = paths.flat_map(|p| p.ok()).collect();
+            let paths: Vec<_> = paths.filter_map(Result::ok).collect();
             if paths.len() != 1 {
                 Err(OpenError::DirectoryDoesNotContainSplitSPK)?;
             }
@@ -165,6 +166,7 @@ impl<'a> SPKFile<'a> {
         Self::parse(Cursor::new(spk_file_data))
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn read(&self, file: &FileInfo) -> Result<Vec<u8>, ReadError> {
         let mut buf = vec![0; file.data_size as usize];
         let mut reader = self.reader.lock().unwrap();

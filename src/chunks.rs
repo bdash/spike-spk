@@ -30,7 +30,7 @@ impl ByteLen {
     pub(crate) fn byte_len(&self) -> u64 {
         match self {
             ByteLen::New(byte_len) => *byte_len,
-            ByteLen::Old(byte_len) => *byte_len as u64,
+            ByteLen::Old(byte_len) => u64::from(*byte_len),
         }
     }
 
@@ -231,9 +231,9 @@ impl TryFrom<FileInfo> for FI64 {
             FileInfo::FINF(finf) => Ok(FI64 {
                 byte_len: finf.byte_len,
                 filename: finf.filename,
-                file_size: finf.file_size as u64,
-                data_offset: finf.data_offset as u64,
-                data_size: finf.data_size as u64,
+                file_size: u64::from(finf.file_size),
+                data_offset: u64::from(finf.data_offset),
+                data_size: u64::from(finf.data_size),
                 mode: finf.mode,
                 data_hmac: finf.data_hmac,
                 data_md5: finf.data_md5,

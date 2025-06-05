@@ -1,4 +1,7 @@
-use std::{ffi::OsStr, path::PathBuf};
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
 use clap::Parser as _;
 
@@ -68,7 +71,7 @@ struct ExtractCommand {
     output: Option<PathBuf>,
 }
 
-fn file_name_prefix(path: &PathBuf) -> Option<&OsStr> {
+fn file_name_prefix(path: &Path) -> Option<&OsStr> {
     let file_name = path.file_name()?.to_str()?;
     let i = match file_name[1..].find('.') {
         Some(i) => i + 1,

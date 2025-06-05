@@ -16,6 +16,13 @@ rayon = "1.10.0"
 sha1 = "0.10.6"
 thiserror = "2.0.12"
 
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = { level = "allow" }
+missing_panics_doc = { level = "allow" }
+similar_names = { level = "allow" }
+upper_case_acronyms = { level = "allow" }
+
 [patch.crates-io]
 # Work around https://github.com/wcampbell0x2a/backhand/issues/714
 backhand = { git = "https://github.com/bdash/backhand.git", branch = "spk-assert-workaround" }
